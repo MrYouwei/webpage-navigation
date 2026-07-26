@@ -1861,8 +1861,8 @@
             
             try {
                 htmlStr = htmlStr.replace(/<!--[\s\S]*?-->/g, '');
-                htmlStr = htmlStr.replace(new RegExp('<p>', 'gi'), '') ;
-                htmlStr = htmlStr.replace(new RegExp('<' + '/p>', 'gi'), '');
+                htmlStr = htmlStr.replace(/<p>/gi, '');
+                htmlStr = htmlStr.replace(/<\/p>/gi, '');
             } catch (e) {
                 console.error('处理HTML内容时出错:', e);
                 return [];
