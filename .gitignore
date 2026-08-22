@@ -7,9 +7,13 @@ doc/提示词/
 *.log
 
 # =============== Node.js / Frontend ===============
-node_modules/
-dist/
-dist-ssr/
+# 忽略任意层级的 node_modules / dist（覆盖 backend/、frontend/ 及未来子工程）
+**/node_modules/
+**/dist/
+**/dist-ssr/
+# Vite 专属缓存 & 产物
+.vite/
+.vite-temp/
 *.local
 
 # =============== IDE / Editors ===============
@@ -18,8 +22,20 @@ dist-ssr/
 *.iml
 *.iws
 *.ipr
+# VSCode 用户级工作区设置（不想上传的个人快捷键/launch.json）
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+.vscode/extensions.json
+# 其他系统/编辑器
 .DS_Store
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.swp
+*.swo
+*~
 
 # =============== Build / Cache ===============
 *.tsbuildinfo
@@ -27,8 +43,15 @@ Thumbs.db
 .parcel-cache/
 .eslintcache
 .stylelintcache
+# Vite/Node 临时缓存
+.temp/
+.tmp/
+coverage/
+*.tgz
 
 # =============== Logs ===============
+logs/
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -36,5 +59,8 @@ pnpm-debug.log*
 lerna-debug.log*
 
 # =============== Env files ===============
+# 所有本地/私密环境变量忽略；.env.development / .env.production 这类带环境后缀
+# 且不含 .local 的作为模板会被提交，这是符合 Vue/Vite 约定的
+.env
 .env.local
 .env.*.local

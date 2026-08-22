@@ -1,0 +1,49 @@
+# =============== Dependencies ===============
+node_modules/
+
+# =============== Build outputs ===============
+dist/
+dist-ssr/
+.vite/
+
+# =============== Cache & temp ===============
+*.tsbuildinfo
+.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+.temp/
+.tmp/
+coverage/
+
+# =============== Logs ===============
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# =============== Environment files ===============
+# 提交 .env.development / .env.production 作为模板
+# 只忽略真正包含本地密钥/个性化的变体
+.env
+.env.local
+.env.*.local
+*.local
+
+# =============== OS / Editor extras ===============
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
