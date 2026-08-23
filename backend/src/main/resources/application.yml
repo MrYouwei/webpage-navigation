@@ -48,6 +48,7 @@ app:
       - http://localhost:8381
       - http://127.0.0.1:8381
       - https://tanyouwei.alwaysdata.net/
+      - http://tanyouwei.alwaysdata.net/
       - https://mryouwei.github.io/DaoHang/
       - https://mryouwei.github.io/webpage-navigation/
       - http://mryouwei.github.io/webpage-navigation/
