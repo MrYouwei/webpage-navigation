@@ -46,14 +46,14 @@ public class WebsiteTitleService implements WebsiteTitleOperations {
                 .get();
 
         String title = doc.title();
-        if (title != null && !title.trim().isEmpty()) {
+        if (!title.trim().isEmpty()) {
             return title.trim();
         }
 
         Element ogMeta = doc.selectFirst("meta[property=og:title]");
         if (ogMeta != null) {
             String content = ogMeta.attr("content");
-            if (content != null && !content.trim().isEmpty()) {
+            if (!content.trim().isEmpty()) {
                 return content.trim();
             }
         }
