@@ -1,10 +1,14 @@
 <script setup>
 import { ref, watch, computed } from 'vue'
 import { useNavStore } from '../stores/nav'
+import { api } from '../api/index'
 
 const navStore = useNavStore()
 
 const form = ref({ name: '', url: '' })
+const isFetchingTitle = ref(false)
+let titleFetchTimer = null
+let lastFetchedUrl = ''
 
 const dialogTitle = computed(() => {
   const { type } = navStore.editDialog
@@ -26,8 +30,7 @@ const showUrl = computed(() => {
 const isNameOptional = computed(() => navStore.editDialog.type === 'addSite')
 const isNameRequired = computed(() => !isNameOptional.value)
 
-// 从网址中提取名称：取主域名首段并首字母大写
-// 例: www.google.com -> Google, github.com -> GitHub
+// 从网址中提取名称：取主域名首段并首字母大写（兜底方案）
 function extractNameFromUrl(url) {
   if (!url) return ''
   let urlStr = String(url).trim()
@@ -49,33 +52,78 @@ function extractNameFromUrl(url) {
   }
 }
 
+// 通过后端接口获取网页标题
+async function fetchWebsiteTitle(url) {
+  let urlStr = String(url).trim()
+  if (!urlStr) return ''
+  if (!/^https?:\/\//i.test(urlStr)) {
+    urlStr = 'http://' + urlStr
+  }
+
+  try {
+    const result = await api.getWebsiteTitle(urlStr)
+    if (result.code >= 200 && result.code < 300 && result.data?.title) {
+      return result.data.title
+    }
+  } catch {
+    // 后端接口失败，回退到域名提取
+  }
+
+  // 回退：从域名提取
+  return extractNameFromUrl(urlStr)
+}
+
 watch(() => navStore.editDialog.visible, (visible) => {
   if (visible) {
     const { type, node } = navStore.editDialog
+    // 新建操作：名称和网址都留空，不预填父节点信息
+    const isAdd = ['addRootGroup', 'addGroup', 'addSite'].includes(type)
     form.value = {
-      name: node?.name || '',
-      url: node?.url || ''
+      name: isAdd ? '' : (node?.name || ''),
+      url: isAdd ? '' : (node?.url || '')
     }
+    lastFetchedUrl = ''
   }
 })
 
-// 监听网址输入：当名称为空时自动从网址解析
+// 监听网址输入：防抖获取网站标题
 watch(() => form.value.url, (newUrl) => {
   if (!isNameOptional.value) return
-  if (!newUrl || !newUrl.trim()) return
-  if (form.value.name && form.value.name.trim()) return
-  const auto = extractNameFromUrl(newUrl)
-  if (auto) {
-    form.value.name = auto
+  if (!newUrl || !newUrl.trim()) {
+    isFetchingTitle.value = false
+    return
   }
+
+  // 用户已手动输入名称则不覆盖
+  if (form.value.name && form.value.name.trim()) return
+
+  // 防抖：输入停止 800ms 后再请求
+  clearTimeout(titleFetchTimer)
+  titleFetchTimer = setTimeout(async () => {
+    // 避免重复请求
+    if (lastFetchedUrl === newUrl.trim()) return
+    lastFetchedUrl = newUrl.trim()
+
+    isFetchingTitle.value = true
+    const title = await fetchWebsiteTitle(newUrl)
+    isFetchingTitle.value = false
+
+    // 再次检查：用户可能在请求期间手动输入了名称
+    if (form.value.name && form.value.name.trim()) return
+    if (title) {
+      form.value.name = title
+    }
+  }, 800)
 })
 
-function handleConfirm() {
-  // addSite 且名称为空时，自动从网址解析后再提交
+async function handleConfirm() {
+  // addSite 且名称为空时，尝试获取网站标题
   if (isNameOptional.value && !form.value.name.trim() && form.value.url.trim()) {
-    const auto = extractNameFromUrl(form.value.url)
-    if (auto) {
-      form.value.name = auto
+    isFetchingTitle.value = true
+    const title = await fetchWebsiteTitle(form.value.url)
+    isFetchingTitle.value = false
+    if (title) {
+      form.value.name = title
     }
   }
   navStore.confirmEditDialog(form.value.name, form.value.url)
@@ -90,27 +138,33 @@ function handleConfirm() {
     @close="navStore.closeEditDialog"
     destroy-on-close
   >
-    <el-form :model="form" label-width="80px">
+    <el-form :model="form" label-width="80px" @submit.prevent>
       <el-form-item label="名称" :required="isNameRequired">
         <el-input
           v-model="form.name"
-          :placeholder="navStore.editDialog.type === 'addSite' ? '请输入网站名称（留空将自动解析）' : '请输入分组名称'"
-          @keyup.enter="handleConfirm"
+          :placeholder="navStore.editDialog.type === 'addSite' ? '请输入网站名称（留空将自动获取网站标题）' : '请输入分组名称'"
+          @keyup.enter.prevent="handleConfirm"
         />
-        <div v-if="isNameOptional" class="name-hint">留空将自动从网址解析</div>
+        <div v-if="isNameOptional" class="name-hint">
+          <span v-if="isFetchingTitle">
+            <el-icon class="is-loading" :size="12"><Loading /></el-icon>
+            正在获取网站标题...
+          </span>
+          <span v-else>留空将自动获取网站标题</span>
+        </div>
       </el-form-item>
       <el-form-item v-if="showUrl" label="网址" required>
         <el-input
           v-model="form.url"
           placeholder="请输入完整网址（带http/https）"
-          @keyup.enter="handleConfirm"
+          @keyup.enter.prevent="handleConfirm"
         />
       </el-form-item>
     </el-form>
 
     <template #footer>
       <el-button @click="navStore.closeEditDialog">取消</el-button>
-      <el-button type="primary" @click="handleConfirm">确认</el-button>
+      <el-button type="primary" :loading="isFetchingTitle" @click="handleConfirm">确认</el-button>
     </template>
   </el-dialog>
 </template>

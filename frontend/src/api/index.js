@@ -48,6 +48,11 @@ export const api = {
   updateNavData: (navData) => request.put('/api/nav/data', {
     navData,
     clientVersion: '1.0'
+  }),
+
+  // 获取网页标题
+  getWebsiteTitle: (url) => request.get('/api/website/title', {
+    params: { url }
   })
 }
 
