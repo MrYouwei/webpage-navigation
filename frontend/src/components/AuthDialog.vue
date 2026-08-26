@@ -4,7 +4,7 @@ import { useNavStore } from '../stores/nav'
 
 const navStore = useNavStore()
 
-const loginForm = ref({ username: '', password: '' })
+const loginForm = ref({ username: '', password: '', rememberMe: true })
 const registerForm = ref({ username: '', password: '', confirmPassword: '' })
 
 const activeTab = computed({
@@ -16,7 +16,7 @@ const isLoginMode = computed(() => activeTab.value === 'login')
 
 watch(() => navStore.authDialog.visible, (visible) => {
   if (visible) {
-    loginForm.value = { username: '', password: '' }
+    loginForm.value = { username: '', password: '', rememberMe: true }
     registerForm.value = { username: '', password: '', confirmPassword: '' }
   }
 })
@@ -78,6 +78,9 @@ function handleClose() {
           show-password
           @keyup.enter="handleSubmit"
         />
+      </el-form-item>
+      <el-form-item>
+        <el-checkbox v-model="loginForm.rememberMe">记住我（30天自动登录）</el-checkbox>
       </el-form-item>
     </el-form>
 

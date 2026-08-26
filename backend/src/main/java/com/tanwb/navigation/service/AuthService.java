@@ -59,7 +59,8 @@ public class AuthService implements AuthOperations {
 
     @Override
     public AuthUserResponse login(LoginRequest request) {
-        loginSubject(request.getUsername().trim(), request.getPassword());
+        boolean remember = Boolean.TRUE.equals(request.getRememberMe());
+        loginSubject(request.getUsername().trim(), request.getPassword(), remember);
         AuthPrincipal principal = securityService.requireUser();
         Map<String, Object> navData = navDataService.getOrCreateData(principal.getUserId());
         return new AuthUserResponse(principal.getUserId(), principal.getUsername(), navData);
@@ -81,11 +82,15 @@ public class AuthService implements AuthOperations {
     }
 
     private void loginSubject(String username, String password) {
+        loginSubject(username, password, false);
+    }
+
+    private void loginSubject(String username, String password, boolean rememberMe) {
         Subject subject = SecurityUtils.getSubject();
         if (subject.isAuthenticated()) {
             subject.logout();
         }
-        subject.login(new UsernamePasswordToken(username, password));
+        subject.login(new UsernamePasswordToken(username, password, rememberMe));
     }
 
     private boolean existsByUsername(String username) {

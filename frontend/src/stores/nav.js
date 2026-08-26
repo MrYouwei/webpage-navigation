@@ -4,6 +4,7 @@ import { api } from '../api/index'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const SIDEBAR_COLLAPSED_KEY = 'webpage-navigation:sidebar-collapsed'
+const LAST_SELECTED_GROUP_KEY = 'webpage-navigation:last-selected-group'
 
 function generateId() {
   return Date.now() + '-' + Math.random().toString(36).substr(2, 9)
@@ -107,6 +108,7 @@ export const useNavStore = defineStore('nav', () => {
   const saveTimer = ref(null)
   const activeModule = ref('我的')
   const navScrollAnchor = ref('') // 导航模块左侧树点击 → 右侧分块滚动锚点
+  const lastSelectedGroupId = ref(localStorage.getItem(LAST_SELECTED_GROUP_KEY) || '')
 
   const lastSavedSnapshot = ref('[]')
 
@@ -282,6 +284,44 @@ export const useNavStore = defineStore('nav', () => {
     return null
   }
 
+  function findParentGroupNode(list, id, parentGroup = null) {
+    for (const node of list) {
+      if (node.id === id) return parentGroup
+      if (node.type === 'group' && node.children) {
+        const found = findParentGroupNode(node.children, id, node)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
+  function findFirstGroup(list) {
+    for (const node of list) {
+      if (node.type === 'group') return node
+      const found = findFirstGroup(node.children || [])
+      if (found) return found
+    }
+    return null
+  }
+
+  function getGroupForNode(node) {
+    if (!node) return null
+    if (node.type === 'group') return node
+    return findParentGroupNode(bookmarkData.value, node.id)
+  }
+
+  function resolveDefaultSiteParent() {
+    const remembered = lastSelectedGroupId.value ? findNodeById(bookmarkData.value, lastSelectedGroupId.value) : null
+    if (remembered && remembered.type === 'group') return remembered
+    return getGroupForNode(currentSelectNode.value) || findFirstGroup(bookmarkData.value)
+  }
+
+  function setLastSelectedGroup(group) {
+    if (!group || group.type !== 'group') return
+    lastSelectedGroupId.value = group.id
+    localStorage.setItem(LAST_SELECTED_GROUP_KEY, group.id)
+  }
+
   function isAncestor(ancestorId, descendantId) {
     function containsId(list, id) {
       for (const node of list) {
@@ -306,6 +346,10 @@ export const useNavStore = defineStore('nav', () => {
 
   function selectNode(node) {
     currentSelectNode.value = node
+    const group = getGroupForNode(node)
+    if (group) {
+      setLastSelectedGroup(group)
+    }
   }
 
   function addRootGroup(name) {
@@ -317,6 +361,7 @@ export const useNavStore = defineStore('nav', () => {
       expanded: true
     }
     bookmarkData.value.push(newGroup)
+    setLastSelectedGroup(newGroup)
     notifyChange()
   }
 
@@ -331,6 +376,7 @@ export const useNavStore = defineStore('nav', () => {
     parentNode.children = parentNode.children || []
     parentNode.children.push(newGroup)
     parentNode.expanded = true
+    setLastSelectedGroup(newGroup)
     notifyChange()
   }
 
@@ -572,17 +618,32 @@ export const useNavStore = defineStore('nav', () => {
   }
 
   function openEditDialog(type, node = null) {
+    const group = getGroupForNode(node)
+    if (group) {
+      setLastSelectedGroup(group)
+    }
     editDialog.value = { visible: true, type, node }
+  }
+
+  function openQuickAddSiteDialog() {
+    const targetGroup = resolveDefaultSiteParent()
+    if (!targetGroup) {
+      ElMessage.warning('请先新建分组')
+      return
+    }
+    setLastSelectedGroup(targetGroup)
+    editDialog.value = { visible: true, type: 'quickAddSite', node: targetGroup }
   }
 
   function closeEditDialog() {
     editDialog.value = { visible: false, type: '', node: null }
   }
 
-  function confirmEditDialog(name, url) {
+  function confirmEditDialog(name, url, targetGroupId = '') {
     const { type, node } = editDialog.value
-    // addSite 类型名称可不填（将自动从网址解析）
-    if (type !== 'addSite' && !name.trim()) {
+    const isAddSiteType = ['addSite', 'quickAddSite'].includes(type)
+    // 新建网站类型名称可不填（将自动从网址解析）
+    if (!isAddSiteType && !name.trim()) {
       ElMessage.warning('请输入名称')
       return
     }
@@ -605,7 +666,24 @@ export const useNavStore = defineStore('nav', () => {
           return
         }
         addSite(node, name.trim(), url.trim())
+        setLastSelectedGroup(node)
         break
+      case 'quickAddSite': {
+        const targetGroup = targetGroupId ? findNodeById(bookmarkData.value, targetGroupId) : null
+        if (!targetGroup || targetGroup.type !== 'group') {
+          ElMessage.warning('请选择文件夹路径')
+          return
+        }
+        if (!url.trim()) {
+          ElMessage.warning('请输入完整网址')
+          return
+        }
+        addSite(targetGroup, name.trim(), url.trim())
+        targetGroup.expanded = true
+        currentSelectNode.value = targetGroup
+        setLastSelectedGroup(targetGroup)
+        break
+      }
       case 'rename':
         if (!node) return
         renameNode(node, name.trim())
@@ -904,7 +982,11 @@ export const useNavStore = defineStore('nav', () => {
     try {
       let response
       if (authDialog.value.mode === 'login') {
-        response = await api.login({ username: formData.username, password: formData.password })
+        response = await api.login({
+          username: formData.username,
+          password: formData.password,
+          rememberMe: !!formData.rememberMe
+        })
       } else {
         response = await api.register({
           username: formData.username,
@@ -1060,6 +1142,7 @@ export const useNavStore = defineStore('nav', () => {
     showContextMenu,
     hideContextMenu,
     openEditDialog,
+    openQuickAddSiteDialog,
     closeEditDialog,
     confirmEditDialog,
     openExportDialog,

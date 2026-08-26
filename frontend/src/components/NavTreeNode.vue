@@ -52,8 +52,8 @@ const handleNodeClick = () => {
   navStore.selectNode(props.node)
   // readonly 模式（导航模块左侧菜单）→ 向父组件派发节点，用于内容区滚动
   emit('node-click', props.node)
-  // 非只读模式下，点击叶子节点（网站）时打开网址
-  if (!props.readonly && props.node.type === 'link' && props.node.url) {
+  // 点击叶子节点（网站）时打开网址；readonly 只限制编辑能力，不限制访问网站
+  if (props.node.type === 'link' && props.node.url && props.node.url !== '#' && !props.node.placeholder) {
     window.open(props.node.url, '_blank', 'noopener noreferrer')
   }
 }

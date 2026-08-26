@@ -5,10 +5,11 @@ import { api } from '../api/index'
 
 const navStore = useNavStore()
 
-const form = ref({ name: '', url: '' })
+const form = ref({ name: '', url: '', folderId: '' })
 const isFetchingTitle = ref(false)
 let titleFetchTimer = null
 let lastFetchedUrl = ''
+let confirming = false
 
 const dialogTitle = computed(() => {
   const { type } = navStore.editDialog
@@ -16,6 +17,7 @@ const dialogTitle = computed(() => {
     addRootGroup: '新建根分组',
     addGroup: '新建子分组',
     addSite: '新建网站',
+    quickAddSite: '快速新增网站',
     rename: '重命名分组',
     editSite: '编辑网站'
   }
@@ -23,12 +25,59 @@ const dialogTitle = computed(() => {
 })
 
 const showUrl = computed(() => {
-  return ['addSite', 'editSite'].includes(navStore.editDialog.type)
+  return ['addSite', 'quickAddSite', 'editSite'].includes(navStore.editDialog.type)
 })
 
-// addSite 类型下名称可不填（可从网址自动解析）
-const isNameOptional = computed(() => navStore.editDialog.type === 'addSite')
+const showFolderPath = computed(() => navStore.editDialog.type === 'quickAddSite')
+const isAddSiteDialog = computed(() => ['addSite', 'quickAddSite'].includes(navStore.editDialog.type))
+const dialogWidth = computed(() => showFolderPath.value ? '520px' : '400px')
+const formLabelWidth = computed(() => showFolderPath.value ? '96px' : '80px')
+
+// 新建网站类型下名称可不填（可从网址自动解析）
+const isNameOptional = computed(() => isAddSiteDialog.value)
 const isNameRequired = computed(() => !isNameOptional.value)
+
+const folderTreeData = computed(() => buildGroupTreeOptions(navStore.bookmarkData))
+const selectedFolderPath = computed(() => findGroupPath(navStore.bookmarkData, form.value.folderId).join(' / '))
+
+function buildGroupTreeOptions(list, path = []) {
+  if (!Array.isArray(list)) return []
+  return list
+    .filter(node => node.type === 'group')
+    .map(node => {
+      const label = node.name || '未命名分组'
+      const fullPath = path.concat(label).join(' / ')
+      const option = {
+        id: node.id,
+        label,
+        fullPath,
+        searchText: `${label} ${fullPath}`.toLowerCase()
+      }
+      const children = buildGroupTreeOptions(node.children || [], path.concat(label))
+      if (children.length > 0) {
+        option.children = children
+      }
+      return option
+    })
+}
+
+function filterFolderNode(keyword, data) {
+  const value = String(keyword || '').trim().toLowerCase()
+  if (!value) return true
+  return (data.searchText || '').includes(value)
+}
+
+function findGroupPath(list, targetId, path = []) {
+  if (!targetId || !Array.isArray(list)) return []
+  for (const node of list) {
+    if (node.type !== 'group') continue
+    const nextPath = path.concat(node.name || '未命名分组')
+    if (node.id === targetId) return nextPath
+    const childPath = findGroupPath(node.children || [], targetId, nextPath)
+    if (childPath.length > 0) return childPath
+  }
+  return []
+}
 
 // 从网址中提取名称：取主域名首段并首字母大写（兜底方案）
 function extractNameFromUrl(url) {
@@ -77,12 +126,14 @@ watch(() => navStore.editDialog.visible, (visible) => {
   if (visible) {
     const { type, node } = navStore.editDialog
     // 新建操作：名称和网址都留空，不预填父节点信息
-    const isAdd = ['addRootGroup', 'addGroup', 'addSite'].includes(type)
+    const isAdd = ['addRootGroup', 'addGroup', 'addSite', 'quickAddSite'].includes(type)
     form.value = {
       name: isAdd ? '' : (node?.name || ''),
-      url: isAdd ? '' : (node?.url || '')
+      url: isAdd ? '' : (node?.url || ''),
+      folderId: type === 'quickAddSite' ? (node?.id || '') : ''
     }
     lastFetchedUrl = ''
+    confirming = false
   }
 })
 
@@ -117,16 +168,23 @@ watch(() => form.value.url, (newUrl) => {
 })
 
 async function handleConfirm() {
-  // addSite 且名称为空时，尝试获取网站标题
-  if (isNameOptional.value && !form.value.name.trim() && form.value.url.trim()) {
-    isFetchingTitle.value = true
-    const title = await fetchWebsiteTitle(form.value.url)
-    isFetchingTitle.value = false
-    if (title) {
-      form.value.name = title
+  if (confirming) return
+  confirming = true
+  // 新建网站且名称为空时，尝试获取网站标题
+  try {
+    if (isNameOptional.value && !form.value.name.trim() && form.value.url.trim()) {
+      isFetchingTitle.value = true
+      const title = await fetchWebsiteTitle(form.value.url)
+      isFetchingTitle.value = false
+      if (title) {
+        form.value.name = title
+      }
     }
+    navStore.confirmEditDialog(form.value.name, form.value.url, form.value.folderId)
+  } finally {
+    isFetchingTitle.value = false
+    confirming = false
   }
-  navStore.confirmEditDialog(form.value.name, form.value.url)
 }
 </script>
 
@@ -134,16 +192,16 @@ async function handleConfirm() {
   <el-dialog
     v-model="navStore.editDialog.visible"
     :title="dialogTitle"
-    width="400px"
+    :width="dialogWidth"
     @close="navStore.closeEditDialog"
     destroy-on-close
   >
-    <el-form :model="form" label-width="80px" @submit.prevent>
+    <el-form :model="form" :label-width="formLabelWidth" @submit.prevent.stop="handleConfirm">
       <el-form-item label="名称" :required="isNameRequired">
         <el-input
           v-model="form.name"
-          :placeholder="navStore.editDialog.type === 'addSite' ? '请输入网站名称（留空将自动获取网站标题）' : '请输入分组名称'"
-          @keyup.enter.prevent="handleConfirm"
+          :placeholder="isAddSiteDialog ? '请输入网站名称（留空将自动获取网站标题）' : '请输入分组名称'"
+          @keydown.enter.prevent.stop="handleConfirm"
         />
         <div v-if="isNameOptional" class="name-hint">
           <span v-if="isFetchingTitle">
@@ -157,8 +215,23 @@ async function handleConfirm() {
         <el-input
           v-model="form.url"
           placeholder="请输入完整网址（带http/https）"
-          @keyup.enter.prevent="handleConfirm"
+          @keydown.enter.prevent.stop="handleConfirm"
         />
+      </el-form-item>
+      <el-form-item v-if="showFolderPath" label="文件夹路径" required>
+        <el-tree-select
+          v-model="form.folderId"
+          :data="folderTreeData"
+          node-key="id"
+          :props="{ label: 'label', children: 'children' }"
+          placeholder="请选择文件夹路径"
+          check-strictly
+          default-expand-all
+          filterable
+          :filter-node-method="filterFolderNode"
+          class="folder-select"
+        />
+        <div class="path-hint">{{ selectedFolderPath || '请选择保存位置' }}</div>
       </el-form-item>
     </el-form>
 
@@ -175,5 +248,18 @@ async function handleConfirm() {
   color: #909399;
   margin-top: 4px;
   line-height: 1.4;
+}
+.folder-select {
+  width: 100%;
+}
+.path-hint {
+  width: 100%;
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

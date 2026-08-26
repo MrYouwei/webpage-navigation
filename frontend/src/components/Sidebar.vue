@@ -86,6 +86,7 @@ function handleTreeReadonlyClick(node) {
 }
 
 function handleAddRootGroup() { navStore.openEditDialog('addRootGroup') }
+function handleQuickAddSiteClick() { navStore.openQuickAddSiteDialog() }
 function handleExpandAll() { navStore.expandAll() }
 function handleCollapseAll() { navStore.collapseAll() }
 function handleImportClick() { fileInputRef.value?.click() }
@@ -155,6 +156,11 @@ onUnmounted(() => window.removeEventListener('drag-end', handleDragEnd))
 
         <!-- 主操作按钮：展开 / 折叠 / 导入 / 导出 / 清空 -->
         <div v-if="showManagementTools" class="main-actions">
+          <el-tooltip content="快速新增网站" placement="bottom" :show-after="200">
+            <el-button class="tool-btn quick-add-site-btn" size="small" circle @click="handleQuickAddSiteClick">
+              <el-icon><Plus /></el-icon>
+            </el-button>
+          </el-tooltip>
           <el-tooltip content="展开全部" placement="bottom" :show-after="200">
             <el-button class="tool-btn" size="small" circle @click="handleExpandAll">
               <el-icon><Expand /></el-icon>
@@ -391,6 +397,15 @@ onUnmounted(() => window.removeEventListener('drag-end', handleDragEnd))
   border-color: rgba(255, 255, 255, 0.3) !important;
   color: #ffffff !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+.main-actions .quick-add-site-btn {
+  color: #63b3ed !important;
+  border-color: rgba(99, 179, 237, 0.35) !important;
+}
+.main-actions .quick-add-site-btn:hover {
+  background-color: rgba(99, 179, 237, 0.18) !important;
+  border-color: rgba(99, 179, 237, 0.6) !important;
+  color: #bee3f8 !important;
 }
 
 .batch-actions {
