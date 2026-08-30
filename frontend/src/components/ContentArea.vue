@@ -276,7 +276,6 @@ function handleNavLinkClick(link, e) {
 function handleCardContextMenu(e, link) {
   e.preventDefault()
   e.stopPropagation()
-  navStore.selectNode(link)
   navStore.showContextMenu(e.clientX, e.clientY, 'link', link.id)
 }
 

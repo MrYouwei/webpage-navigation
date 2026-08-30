@@ -28,7 +28,7 @@ const showUrl = computed(() => {
   return ['addSite', 'quickAddSite', 'editSite'].includes(navStore.editDialog.type)
 })
 
-const showFolderPath = computed(() => navStore.editDialog.type === 'quickAddSite')
+const showFolderPath = computed(() => ['quickAddSite', 'editSite'].includes(navStore.editDialog.type))
 const isAddSiteDialog = computed(() => ['addSite', 'quickAddSite'].includes(navStore.editDialog.type))
 const dialogWidth = computed(() => showFolderPath.value ? '520px' : '400px')
 const formLabelWidth = computed(() => showFolderPath.value ? '96px' : '80px')
@@ -38,7 +38,6 @@ const isNameOptional = computed(() => isAddSiteDialog.value)
 const isNameRequired = computed(() => !isNameOptional.value)
 
 const folderTreeData = computed(() => buildGroupTreeOptions(navStore.bookmarkData))
-const selectedFolderPath = computed(() => findGroupPath(navStore.bookmarkData, form.value.folderId).join(' / '))
 
 function buildGroupTreeOptions(list, path = []) {
   if (!Array.isArray(list)) return []
@@ -65,18 +64,6 @@ function filterFolderNode(keyword, data) {
   const value = String(keyword || '').trim().toLowerCase()
   if (!value) return true
   return (data.searchText || '').includes(value)
-}
-
-function findGroupPath(list, targetId, path = []) {
-  if (!targetId || !Array.isArray(list)) return []
-  for (const node of list) {
-    if (node.type !== 'group') continue
-    const nextPath = path.concat(node.name || '未命名分组')
-    if (node.id === targetId) return nextPath
-    const childPath = findGroupPath(node.children || [], targetId, nextPath)
-    if (childPath.length > 0) return childPath
-  }
-  return []
 }
 
 // 从网址中提取名称：取主域名首段并首字母大写（兜底方案）
@@ -130,7 +117,7 @@ watch(() => navStore.editDialog.visible, (visible) => {
     form.value = {
       name: isAdd ? '' : (node?.name || ''),
       url: isAdd ? '' : (node?.url || ''),
-      folderId: type === 'quickAddSite' ? (node?.id || '') : ''
+      folderId: getInitialFolderId(type, node)
     }
     lastFetchedUrl = ''
     confirming = false
@@ -186,6 +173,12 @@ async function handleConfirm() {
     confirming = false
   }
 }
+
+function getInitialFolderId(type, node) {
+  if (type === 'quickAddSite') return node?.id || ''
+  if (type === 'editSite') return navStore.getGroupForNode(node)?.id || ''
+  return ''
+}
 </script>
 
 <template>
@@ -196,20 +189,13 @@ async function handleConfirm() {
     @close="navStore.closeEditDialog"
     destroy-on-close
   >
-    <el-form :model="form" :label-width="formLabelWidth" @submit.prevent.stop="handleConfirm">
+    <el-form class="edit-form" :model="form" :label-width="formLabelWidth" @submit.prevent.stop="handleConfirm">
       <el-form-item label="名称" :required="isNameRequired">
         <el-input
           v-model="form.name"
           :placeholder="isAddSiteDialog ? '请输入网站名称（留空将自动获取网站标题）' : '请输入分组名称'"
           @keydown.enter.prevent.stop="handleConfirm"
         />
-        <div v-if="isNameOptional" class="name-hint">
-          <span v-if="isFetchingTitle">
-            <el-icon class="is-loading" :size="12"><Loading /></el-icon>
-            正在获取网站标题...
-          </span>
-          <span v-else>留空将自动获取网站标题</span>
-        </div>
       </el-form-item>
       <el-form-item v-if="showUrl" label="网址" required>
         <el-input
@@ -231,7 +217,6 @@ async function handleConfirm() {
           :filter-node-method="filterFolderNode"
           class="folder-select"
         />
-        <div class="path-hint">{{ selectedFolderPath || '请选择保存位置' }}</div>
       </el-form-item>
     </el-form>
 
@@ -243,23 +228,13 @@ async function handleConfirm() {
 </template>
 
 <style scoped>
-.name-hint {
-  font-size: 12px;
-  color: #909399;
-  margin-top: 4px;
-  line-height: 1.4;
+.edit-form :deep(.el-form-item) {
+  margin-bottom: 18px;
+}
+.edit-form :deep(.el-form-item:last-child) {
+  margin-bottom: 0;
 }
 .folder-select {
   width: 100%;
-}
-.path-hint {
-  width: 100%;
-  font-size: 12px;
-  color: #909399;
-  margin-top: 4px;
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 </style>

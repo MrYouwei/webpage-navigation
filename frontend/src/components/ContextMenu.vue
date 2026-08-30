@@ -12,7 +12,7 @@ const nodeType = computed(() => menu.value.nodeType)
 
 const showAddGroup = computed(() => nodeType.value !== 'link')
 const showAddSite = computed(() => nodeType.value !== 'link')
-const showRename = computed(() => true)
+const showRename = computed(() => nodeType.value !== 'link')
 const showEditSite = computed(() => nodeType.value === 'link')
 const showDeleteFolderOnly = computed(() => nodeType.value === 'group')
 const showDelete = computed(() => true)
@@ -55,6 +55,7 @@ function handleEditSite() {
 async function handleDelete() {
   const node = getNode()
   if (!node) return
+  const targetId = nodeId.value
   navStore.hideContextMenu()
   try {
     await ElMessageBox.confirm(`确定要删除「${node.name}」吗？删除后无法恢复！`, '警告', {
@@ -62,13 +63,14 @@ async function handleDelete() {
       cancelButtonText: '取消',
       type: 'warning'
     })
-    navStore.deleteNodeById(nodeId.value)
+    navStore.deleteNodeById(targetId)
   } catch {}
 }
 
 async function handleDeleteFolderOnly() {
   const node = getNode()
   if (!node || node.type !== 'group') return
+  const targetId = nodeId.value
   navStore.hideContextMenu()
   try {
     await ElMessageBox.confirm(`确定要仅删除文件夹「${node.name}」吗？其内容将保留到上级目录！`, '警告', {
@@ -76,7 +78,7 @@ async function handleDeleteFolderOnly() {
       cancelButtonText: '取消',
       type: 'warning'
     })
-    navStore.deleteFolderOnlyById(nodeId.value)
+    navStore.deleteFolderOnlyById(targetId)
   } catch {}
 }
 

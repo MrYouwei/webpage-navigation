@@ -19,7 +19,7 @@ import org.springframework.web.util.ContentCachingResponseWrapper;
 @Order(Ordered.LOWEST_PRECEDENCE)
 public class RequestResponseLoggingFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(RequestResponseLoggingFilter.class);
-    private static final int MAX_BODY_LENGTH = 4000;
+    private static final int MAX_BODY_LENGTH = 1000;
     private static final Pattern PASSWORD_PATTERN = Pattern.compile(
             "(\"(?:password|confirmPassword)\"\\s*:\\s*\")([^\"]*)(\")",
             Pattern.CASE_INSENSITIVE);
@@ -28,16 +28,32 @@ public class RequestResponseLoggingFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, java.io.IOException {
         long start = System.currentTimeMillis();
+        boolean logBody = shouldLogBody(request);
+
+        if (!logBody) {
+            try {
+                filterChain.doFilter(request, response);
+            } finally {
+                long duration = System.currentTimeMillis() - start;
+                log.info("HTTP {} {} status={} duration={}ms requestBody={} responseBody={}",
+                        request.getMethod(),
+                        request.getRequestURI(),
+                        response.getStatus(),
+                        duration,
+                        "[omitted]",
+                        "[omitted]");
+            }
+            return;
+        }
+
         ContentCachingRequestWrapper requestWrapper = new ContentCachingRequestWrapper(request);
         ContentCachingResponseWrapper responseWrapper = new ContentCachingResponseWrapper(response);
-
         try {
             filterChain.doFilter(requestWrapper, responseWrapper);
         } finally {
             long duration = System.currentTimeMillis() - start;
             String requestBody = redact(readRequestBody(requestWrapper));
             String responseBody = redact(readResponseBody(responseWrapper));
-
             log.info("HTTP {} {} status={} duration={}ms requestBody={} responseBody={}",
                     request.getMethod(),
                     request.getRequestURI(),
@@ -48,6 +64,11 @@ public class RequestResponseLoggingFilter extends OncePerRequestFilter {
 
             responseWrapper.copyBodyToResponse();
         }
+    }
+
+    private boolean shouldLogBody(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        return !"/api/auth/me".equals(uri) && !"/api/nav/data".equals(uri);
     }
 
     private String readRequestBody(ContentCachingRequestWrapper request) {

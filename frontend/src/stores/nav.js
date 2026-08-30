@@ -227,7 +227,7 @@ export const useNavStore = defineStore('nav', () => {
     saveTimer.value && clearTimeout(saveTimer.value)
     saveTimer.value = setTimeout(() => {
       persistData(false)
-    }, 800)
+    }, 1500)
   }
 
   async function persistData(showSuccess = false) {
@@ -406,19 +406,38 @@ export const useNavStore = defineStore('nav', () => {
     notifyChange()
   }
 
-  function editSite(node, name, url) {
+  function editSite(node, name, url, targetGroupId = '') {
     let fullUrl = url
     if (!/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(url)) {
       fullUrl = 'http://' + url
     }
     node.name = name
     node.url = fullUrl
+    const targetGroup = targetGroupId ? findNodeById(bookmarkData.value, targetGroupId) : null
+    const currentGroup = getGroupForNode(node)
+    if (targetGroup && targetGroup.type === 'group' && currentGroup && currentGroup.id !== targetGroup.id) {
+      const sourceInfo = findNodeAndParent(bookmarkData.value, node.id)
+      if (sourceInfo) {
+        sourceInfo.parent.splice(sourceInfo.index, 1)
+        targetGroup.children = targetGroup.children || []
+        targetGroup.children.push(node)
+        targetGroup.expanded = true
+        setLastSelectedGroup(targetGroup)
+        if (currentSelectNode.value?.id === node.id) {
+          currentSelectNode.value = targetGroup
+        }
+      }
+    }
     notifyChange()
   }
 
   function deleteNodeById(nodeId) {
     const expandedStates = {}
     collectExpandedStates(bookmarkData.value, expandedStates)
+    const deletedInfo = findNodeAndParent(bookmarkData.value, nodeId)
+    const deletedParentGroup = deletedInfo?.node?.type === 'link'
+      ? findParentGroupNode(bookmarkData.value, nodeId)
+      : null
 
     function removeNode(list, targetId) {
       for (let i = 0; i < list.length; i++) {
@@ -437,7 +456,7 @@ export const useNavStore = defineStore('nav', () => {
     notifyChange()
     restoreExpandedStates(bookmarkData.value, expandedStates)
     if (currentSelectNode.value && currentSelectNode.value.id === nodeId) {
-      currentSelectNode.value = null
+      currentSelectNode.value = deletedParentGroup || null
     }
   }
 
@@ -694,7 +713,18 @@ export const useNavStore = defineStore('nav', () => {
           ElMessage.warning('请输入完整网址')
           return
         }
-        editSite(node, name.trim(), url.trim())
+        if (!targetGroupId) {
+          ElMessage.warning('请选择文件夹路径')
+          return
+        }
+        {
+          const targetGroup = findNodeById(bookmarkData.value, targetGroupId)
+          if (!targetGroup || targetGroup.type !== 'group') {
+            ElMessage.warning('请选择文件夹路径')
+            return
+          }
+        }
+        editSite(node, name.trim(), url.trim(), targetGroupId)
         break
     }
 
@@ -1132,6 +1162,7 @@ export const useNavStore = defineStore('nav', () => {
     addSite,
     renameNode,
     editSite,
+    getGroupForNode,
     deleteNodeById,
     deleteFolderOnlyById,
     moveNode,

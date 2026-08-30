@@ -11,6 +11,11 @@ server:
 spring:
   application:
     name: webpage-navigation-backend
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    database: ${REDIS_DATABASE:0}
+    timeout: 3s
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://mysql-tanyouwei.alwaysdata.net:3306/tanyouwei_db?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
@@ -35,12 +40,16 @@ mybatis-plus:
 
 logging:
   level:
-    com.tanwb.navigation.mapper: debug
-    com.baomidou.mybatisplus: debug
-    com.zaxxer.hikari.HikariConfig: debug
-    com.zaxxer.hikari.pool.HikariPool: debug
+    com.tanwb.navigation.mapper: info
+    com.baomidou.mybatisplus: info
+    com.zaxxer.hikari.HikariConfig: info
+    com.zaxxer.hikari.pool.HikariPool: info
 
 app:
+  nav:
+    flush-interval-ms: 5000
+    flush-silent-window-ms: 10000
+    flush-batch-size: 100
   cors:
     allowed-origins:
       - http://localhost:5500

@@ -7,4 +7,6 @@ public interface NavDataOperations {
     Map<String, Object> getOrCreateData(Long userId);
 
     SaveNavResponse saveData(Long userId, Map<String, Object> navData);
+
+    void flushDirtyNavData();
 }
