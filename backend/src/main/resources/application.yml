@@ -12,8 +12,10 @@ spring:
   application:
     name: webpage-navigation-backend
   redis:
-    host: ${REDIS_HOST:localhost}
-    port: ${REDIS_PORT:6379}
+    host: ${REDIS_HOST:rate-stitch-pizzas-25624.db.redis.io}
+    port: ${REDIS_PORT:13109}
+    username: ${REDIS_USERNAME:default}
+    password: ${REDIS_PASSWORD:N1l0tZEkqxOgnx6gRburk3dCgM6ubqfj}
     database: ${REDIS_DATABASE:0}
     timeout: 3s
   datasource:

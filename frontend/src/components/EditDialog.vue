@@ -38,6 +38,10 @@ const isNameOptional = computed(() => isAddSiteDialog.value)
 const isNameRequired = computed(() => !isNameOptional.value)
 
 const folderTreeData = computed(() => buildGroupTreeOptions(navStore.bookmarkData))
+const selectedFolderPathText = computed(() => {
+  if (!showFolderPath.value || !form.value.folderId) return ''
+  return findGroupPathText(folderTreeData.value, form.value.folderId)
+})
 
 function buildGroupTreeOptions(list, path = []) {
   if (!Array.isArray(list)) return []
@@ -64,6 +68,16 @@ function filterFolderNode(keyword, data) {
   const value = String(keyword || '').trim().toLowerCase()
   if (!value) return true
   return (data.searchText || '').includes(value)
+}
+
+function findGroupPathText(list, targetId) {
+  if (!Array.isArray(list)) return ''
+  for (const node of list) {
+    if (node.id === targetId) return node.fullPath || node.label || ''
+    const childPath = findGroupPathText(node.children || [], targetId)
+    if (childPath) return childPath
+  }
+  return ''
 }
 
 // 从网址中提取名称：取主域名首段并首字母大写（兜底方案）
@@ -217,6 +231,9 @@ function getInitialFolderId(type, node) {
           :filter-node-method="filterFolderNode"
           class="folder-select"
         />
+        <div v-if="selectedFolderPathText" class="folder-path-hint">
+          {{ selectedFolderPathText }}
+        </div>
       </el-form-item>
     </el-form>
 
@@ -236,5 +253,11 @@ function getInitialFolderId(type, node) {
 }
 .folder-select {
   width: 100%;
+}
+.folder-path-hint {
+  margin-top: 6px;
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.4;
 }
 </style>

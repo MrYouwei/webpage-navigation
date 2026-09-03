@@ -105,7 +105,9 @@ export const useNavStore = defineStore('nav', () => {
   const authLoading = ref(false)
   const authError = ref('')
   const checkedLinkIds = ref([])
+  const batchMode = ref(false)
   const saveTimer = ref(null)
+  const savePending = ref(false)
   const activeModule = ref('我的')
   const navScrollAnchor = ref('') // 导航模块左侧树点击 → 右侧分块滚动锚点
   const lastSelectedGroupId = ref(localStorage.getItem(LAST_SELECTED_GROUP_KEY) || '')
@@ -160,6 +162,7 @@ export const useNavStore = defineStore('nav', () => {
     isDirty.value = false
     currentSelectNode.value = null
     checkedLinkIds.value = []
+    batchMode.value = false
   }
 
   function applyGuestState() {
@@ -171,6 +174,7 @@ export const useNavStore = defineStore('nav', () => {
     isDirty.value = false
     saveTimer.value && clearTimeout(saveTimer.value)
     checkedLinkIds.value = []
+    batchMode.value = false
   }
 
   function getExpandedStorageKey() {
@@ -231,18 +235,33 @@ export const useNavStore = defineStore('nav', () => {
   }
 
   async function persistData(showSuccess = false) {
-    if (!currentUser.value || isSaving.value || !isDirty.value) return
+    if (!currentUser.value || !isDirty.value) return
+    if (isSaving.value) {
+      savePending.value = true
+      return
+    }
+
+    const savedSnapshot = serializeNavData(bookmarkData.value)
+    const navPayload = buildNavPayload()
     isSaving.value = true
     try {
-      const navPayload = buildNavPayload()
       await api.saveNavData(navPayload)
-      lastSavedSnapshot.value = serializeNavData(bookmarkData.value)
-      isDirty.value = false
+      if (serializeNavData(bookmarkData.value) === savedSnapshot) {
+        lastSavedSnapshot.value = savedSnapshot
+        isDirty.value = false
+      } else {
+        isDirty.value = true
+        savePending.value = true
+      }
       if (showSuccess) ElMessage.success('保存成功')
     } catch (e) {
       isDirty.value = true
     } finally {
       isSaving.value = false
+      if (savePending.value && isDirty.value) {
+        savePending.value = false
+        scheduleAutoSave()
+      }
     }
   }
 
@@ -490,6 +509,8 @@ export const useNavStore = defineStore('nav', () => {
   }
 
   function moveNode(draggedId, targetId, position) {
+    if (!draggedId || !targetId || draggedId === targetId) return
+    if (!['inside', 'before', 'after'].includes(position)) return
     if (isAncestor(draggedId, targetId)) return
 
     const expandedStates = {}
@@ -499,6 +520,7 @@ export const useNavStore = defineStore('nav', () => {
     const targetInfo = findNodeAndParent(bookmarkData.value, targetId)
 
     if (!draggedInfo || !targetInfo) return
+    if (position === 'inside' && targetInfo.node.type !== 'group') return
 
     const draggedData = draggedInfo.node
 
@@ -507,9 +529,11 @@ export const useNavStore = defineStore('nav', () => {
       targetInfo.node.children = targetInfo.node.children || []
       targetInfo.node.children.push(draggedData)
       targetInfo.node.expanded = true
+      expandedStates[targetInfo.node.id] = true
     } else {
       const targetParent = targetInfo.parent
       let targetIndex = targetParent.findIndex(n => n.id === targetId)
+      if (targetIndex < 0) return
 
       if (position === 'after') targetIndex += 1
 
@@ -522,8 +546,8 @@ export const useNavStore = defineStore('nav', () => {
     }
 
     notifyChange()
-    saveExpandedStatesToStorage()
     restoreExpandedStates(bookmarkData.value, expandedStates)
+    saveExpandedStatesToStorage()
   }
 
   function toggleGroupExpand(node) {
@@ -567,6 +591,7 @@ export const useNavStore = defineStore('nav', () => {
       notifyChange()
       currentSelectNode.value = null
       checkedLinkIds.value = []
+      batchMode.value = false
       ElMessage.success('已清空所有数据')
     }).catch(() => {})
   }
@@ -1054,6 +1079,7 @@ export const useNavStore = defineStore('nav', () => {
   }
 
   function toggleLinkChecked(linkId) {
+    if (!batchMode.value) return
     const idx = checkedLinkIds.value.indexOf(linkId)
     if (idx >= 0) {
       checkedLinkIds.value.splice(idx, 1)
@@ -1082,6 +1108,7 @@ export const useNavStore = defineStore('nav', () => {
 
   // 分组复选框：若分组下所有链接均已选中则取消全部，否则选中全部
   function toggleGroupChecked(node) {
+    if (!batchMode.value) return
     if (!node || node.type !== 'group') return
     const linkIds = collectLinkIdsInGroup(node)
     if (linkIds.length === 0) return
@@ -1099,9 +1126,29 @@ export const useNavStore = defineStore('nav', () => {
     checkedLinkIds.value = []
   }
 
+  function enterBatchMode() {
+    batchMode.value = true
+  }
+
+  function exitBatchMode() {
+    batchMode.value = false
+    checkedLinkIds.value = []
+  }
+
+  function toggleBatchMode() {
+    if (batchMode.value) {
+      exitBatchMode()
+    } else {
+      enterBatchMode()
+    }
+  }
+
   function batchDeleteCheckedLinks() {
     const ids = [...checkedLinkIds.value]
-    if (ids.length === 0) return
+    if (ids.length === 0) {
+      ElMessage.warning('请选择要删除的网站')
+      return
+    }
 
     ElMessageBox.confirm(`确定要删除选中的 ${ids.length} 个网站吗？删除后无法恢复！`, '警告', {
       confirmButtonText: '确定删除',
@@ -1124,7 +1171,7 @@ export const useNavStore = defineStore('nav', () => {
       removeSelected(bookmarkData.value)
       notifyChange()
       restoreExpandedStates(bookmarkData.value, expandedStates)
-      checkedLinkIds.value = []
+      exitBatchMode()
       ElMessage.success('删除成功')
     }).catch(() => {})
   }
@@ -1147,6 +1194,7 @@ export const useNavStore = defineStore('nav', () => {
     authLoading,
     authError,
     checkedLinkIds,
+    batchMode,
     activeModule,
     navScrollAnchor,
     filteredLinks,
@@ -1189,6 +1237,9 @@ export const useNavStore = defineStore('nav', () => {
     toggleGroupChecked,
     collectLinkIdsInGroup,
     clearCheckedLinks,
+    enterBatchMode,
+    exitBatchMode,
+    toggleBatchMode,
     batchDeleteCheckedLinks,
     buildLinkGroupPathMap,
     highlightField,

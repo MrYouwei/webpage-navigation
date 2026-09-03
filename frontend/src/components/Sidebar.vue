@@ -5,10 +5,13 @@ import NavTreeNode from './NavTreeNode.vue'
 
 const navStore = useNavStore()
 const fileInputRef = ref(null)
+const treeSearchKeyword = ref('')
 
 const isNavModule = computed(() => navStore.activeModule === '导航')
 const showManagementTools = computed(() => navStore.isLoggedIn && navStore.activeModule === '我的')
-const showBatchActions = computed(() => showManagementTools.value && navStore.checkedLinkIds.length > 0)
+const showBatchActions = computed(() => showManagementTools.value && navStore.batchMode)
+const normalizedTreeSearchKeyword = computed(() => treeSearchKeyword.value.trim().toLowerCase())
+const hasTreeSearch = computed(() => normalizedTreeSearchKeyword.value.length > 0)
 
 // ========= 公共导航分类二级树（导航模块专用，左侧菜单） =========
 const publicCategoryTree = [
@@ -71,6 +74,21 @@ const sidebarTreeData = computed(() => {
   return []
 })
 
+const filteredSidebarTreeData = computed(() => {
+  const data = sidebarTreeData.value
+  const keyword = normalizedTreeSearchKeyword.value
+  if (!keyword) return data
+  return data.filter(node => treeMatchesKeyword(node, keyword))
+})
+
+function treeMatchesKeyword(node, keyword) {
+  const name = String(node.name || '').toLowerCase()
+  const url = String(node.url || '').toLowerCase()
+  if (name.includes(keyword) || url.includes(keyword)) return true
+  if (node.type !== 'group') return false
+  return (node.children || []).some(child => treeMatchesKeyword(child, keyword))
+}
+
 // ========= 只读模式（导航模块使用，且二级叶子点击→滚动到对应分块） =========
 const treeReadonly = computed(() => isNavModule.value)
 
@@ -97,7 +115,8 @@ function handleFileChange(e) {
 }
 function handleExportClick() { navStore.openExportDialog() }
 function handleBatchDelete() { navStore.batchDeleteCheckedLinks() }
-function handleBatchCancel() { navStore.clearCheckedLinks() }
+function handleBatchToggle() { navStore.toggleBatchMode() }
+function handleBatchCancel() { navStore.exitBatchMode() }
 function handleToggleSidebar() { navStore.toggleSidebar() }
 
 async function handleDragEnd(e) {
@@ -144,18 +163,12 @@ onUnmounted(() => window.removeEventListener('drag-end', handleDragEnd))
           </template>
         </div>
 
-        <!-- 新建分组 (居中薄按钮) -->
-        <div v-if="showManagementTools" class="add-group-btn">
+        <div v-if="showManagementTools" class="toolbar-grid">
           <el-tooltip content="新建分组" placement="bottom" :show-after="200">
-            <el-button size="small" round @click="handleAddRootGroup">
-              <el-icon><Plus /></el-icon>
-              <span>新建分组</span>
+            <el-button class="tool-btn" size="small" circle @click="handleAddRootGroup">
+              <el-icon><FolderAdd /></el-icon>
             </el-button>
           </el-tooltip>
-        </div>
-
-        <!-- 主操作按钮：展开 / 折叠 / 导入 / 导出 / 清空 -->
-        <div v-if="showManagementTools" class="main-actions">
           <el-tooltip content="快速新增网站" placement="bottom" :show-after="200">
             <el-button class="tool-btn quick-add-site-btn" size="small" circle @click="handleQuickAddSiteClick">
               <el-icon><Plus /></el-icon>
@@ -181,6 +194,17 @@ onUnmounted(() => window.removeEventListener('drag-end', handleDragEnd))
               <el-icon><Download /></el-icon>
             </el-button>
           </el-tooltip>
+          <el-tooltip content="批量操作" placement="bottom" :show-after="200">
+            <el-button
+              class="tool-btn"
+              :class="{ active: navStore.batchMode }"
+              size="small"
+              circle
+              @click="handleBatchToggle"
+            >
+              <el-icon><Finished /></el-icon>
+            </el-button>
+          </el-tooltip>
           <el-tooltip content="清空数据" placement="bottom" :show-after="200">
             <el-button class="tool-btn" size="small" circle @click="navStore.clearAll()">
               <el-icon><RefreshRight /></el-icon>
@@ -204,23 +228,47 @@ onUnmounted(() => window.removeEventListener('drag-end', handleDragEnd))
 
     <!-- 树容器 -->
     <div class="tree-container" v-show="!navStore.sidebarCollapsed">
+      <div v-if="isNavModule || navStore.isLoggedIn" class="tree-search">
+        <el-input
+          v-model="treeSearchKeyword"
+          size="small"
+          clearable
+          placeholder="搜索文件夹/网站"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
+      </div>
       <template v-if="isNavModule">
-        <NavTreeNode
-          v-for="node in sidebarTreeData"
-          :key="node.id"
-          :node="node"
-          :depth="0"
-          readonly
-          @node-click="handleTreeReadonlyClick"
-        />
+        <template v-if="filteredSidebarTreeData.length > 0">
+          <NavTreeNode
+            v-for="node in filteredSidebarTreeData"
+            :key="node.id"
+            :node="node"
+            :depth="0"
+            :filter-keyword="treeSearchKeyword"
+            readonly
+            @node-click="handleTreeReadonlyClick"
+          />
+        </template>
+        <div v-else class="tree-empty tree-empty-compact">
+          <el-empty description="没有匹配的内容" />
+        </div>
       </template>
       <template v-else-if="navStore.isLoggedIn && navStore.bookmarkData.length > 0">
-        <NavTreeNode
-          v-for="node in sidebarTreeData"
-          :key="node.id"
-          :node="node"
-          :depth="0"
-        />
+        <template v-if="filteredSidebarTreeData.length > 0">
+          <NavTreeNode
+            v-for="node in filteredSidebarTreeData"
+            :key="node.id"
+            :node="node"
+            :depth="0"
+            :filter-keyword="treeSearchKeyword"
+          />
+        </template>
+        <div v-else class="tree-empty tree-empty-compact">
+          <el-empty description="没有匹配的内容" />
+        </div>
       </template>
       <div v-else-if="navStore.isLoggedIn" class="tree-empty">
         <el-empty description="暂无分组，点击上方'新建分组'开始" />
@@ -354,55 +402,35 @@ onUnmounted(() => window.removeEventListener('drag-end', handleDragEnd))
   white-space: nowrap;
 }
 
-/* 新建分组按钮 */
-.add-group-btn {
-  display: flex;
+.toolbar-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 32px);
   justify-content: center;
-  margin-bottom: 10px;
-}
-.add-group-btn .el-button {
-  background-color: transparent !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
-  color: #e2e8f0 !important;
-  border-radius: 16px !important;
-  padding: 3px 18px !important;
-  height: 26px !important;
-}
-.add-group-btn .el-button:hover {
-  background-color: rgba(66, 153, 225, 0.15) !important;
-  border-color: rgba(66, 153, 225, 0.4) !important;
-  color: #63b3ed !important;
-}
-
-/* 操作按钮 */
-.main-actions {
-  display: flex;
-  justify-content: center;
-  align-items: center;
   gap: 8px;
 }
-.main-actions .tool-btn {
+
+.toolbar-grid .tool-btn {
   margin-left: 0 !important;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   background-color: transparent !important;
   border: 1px solid rgba(255, 255, 255, 0.15) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
   color: #a0aec0 !important;
 }
-.main-actions .tool-btn:hover {
+.toolbar-grid .tool-btn:hover,
+.toolbar-grid .tool-btn.active {
   background-color: rgba(255, 255, 255, 0.1) !important;
   border-color: rgba(255, 255, 255, 0.3) !important;
   color: #ffffff !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
 }
-.main-actions .quick-add-site-btn {
+.toolbar-grid .quick-add-site-btn {
   color: #63b3ed !important;
   border-color: rgba(99, 179, 237, 0.35) !important;
 }
-.main-actions .quick-add-site-btn:hover {
+.toolbar-grid .quick-add-site-btn:hover {
   background-color: rgba(99, 179, 237, 0.18) !important;
   border-color: rgba(99, 179, 237, 0.6) !important;
   color: #bee3f8 !important;
@@ -429,11 +457,31 @@ onUnmounted(() => window.removeEventListener('drag-end', handleDragEnd))
   overflow-y: auto;
   padding: 6px 0;
 }
+
+.tree-search {
+  padding: 4px 10px 8px;
+}
+
+.tree-search :deep(.el-input__wrapper) {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) inset;
+}
+
+.tree-search :deep(.el-input__inner) {
+  color: #e2e8f0;
+}
+
+.tree-search :deep(.el-input__inner::placeholder) {
+  color: #a0aec0;
+}
+
 .tree-container::-webkit-scrollbar { width: 6px; }
 .tree-container::-webkit-scrollbar-track { background: #2d3748; }
 .tree-container::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 3px; }
 .tree-container::-webkit-scrollbar-thumb:hover { background: #718096; }
 
 .tree-empty { padding: 40px 20px; text-align: center; }
+.tree-empty-compact { padding: 24px 12px; }
 .tree-empty :deep(.el-empty__description p) { color: #718096; font-size: 13px; }
 </style>

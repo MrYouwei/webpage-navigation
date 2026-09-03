@@ -15,7 +15,9 @@ request.interceptors.response.use(
     const result = response.data
     if (result && result.code >= 400) {
       const message = result.message || '请求失败'
-      ElMessage.error(message)
+      if (!(result.code === 401 && response.config?.skipAuthTip)) {
+        ElMessage.error(message)
+      }
       return Promise.reject(new Error(message))
     }
     return result
@@ -26,7 +28,11 @@ request.interceptors.response.use(
       return Promise.reject(new Error('请求超时'))
     }
     if (error.response?.status === 401) {
-      return Promise.reject(new Error('未登录或登录已过期'))
+      const message = error.response?.data?.message || '未登录或登录已过期'
+      if (!error.config?.skipAuthTip) {
+        ElMessage.error(message)
+      }
+      return Promise.reject(new Error(message))
     }
     const message = error.response?.data?.message || error.message || '网络请求失败'
     ElMessage.error(message)
@@ -38,7 +44,7 @@ export const api = {
   login: (data) => request.post('/api/auth/login', data),
   register: (data) => request.post('/api/auth/register', data),
   logout: () => request.post('/api/auth/logout'),
-  getCurrentUser: () => request.get('/api/auth/me'),
+  getCurrentUser: () => request.get('/api/auth/me', { skipAuthTip: true }),
 
   getNavData: () => request.get('/api/nav/data'),
   saveNavData: (navData) => request.post('/api/nav/data', {

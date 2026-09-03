@@ -22,7 +22,7 @@ const currentModule = computed({
   set: (v) => {
     navStore.activeModule = v
     navStore.selectNode(null)
-    navStore.clearCheckedLinks()
+    navStore.exitBatchMode()
   }
 })
 

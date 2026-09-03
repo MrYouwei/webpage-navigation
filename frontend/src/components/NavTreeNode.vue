@@ -6,7 +6,8 @@ import { ElMessageBox } from 'element-plus'
 const props = defineProps({
   node: { type: Object, required: true },
   depth: { type: Number, default: 0 },
-  readonly: { type: Boolean, default: false }
+  readonly: { type: Boolean, default: false },
+  filterKeyword: { type: String, default: '' }
 })
 
 const emit = defineEmits(['node-click', 'node-context-menu', 'node-drag-start', 'node-drag-end'])
@@ -18,9 +19,34 @@ const dropPosition = ref('')
 const dragOver = ref(false)
 
 const isGroup = computed(() => props.node.type === 'group')
-const isExpanded = computed(() => props.node.expanded)
+const normalizedFilterKeyword = computed(() => props.filterKeyword.trim().toLowerCase())
+const hasTreeSearch = computed(() => normalizedFilterKeyword.value.length > 0)
+const isSelfMatched = computed(() => hasTreeSearch.value && nodeMatchesKeyword(props.node, normalizedFilterKeyword.value))
+const visibleChildren = computed(() => {
+  const children = props.node.children || []
+  if (!hasTreeSearch.value) return children
+  if (isSelfMatched.value) return children
+  return children.filter(child => treeMatchesKeyword(child, normalizedFilterKeyword.value))
+})
+const isExpanded = computed(() => {
+  if (!isGroup.value) return false
+  return props.node.expanded || (hasTreeSearch.value && visibleChildren.value.length > 0)
+})
 const isSelected = computed(() => navStore.currentSelectNode?.id === props.node.id)
 const isChecked = computed(() => navStore.checkedLinkIds.includes(props.node.id))
+
+function nodeMatchesKeyword(node, keyword) {
+  if (!keyword) return true
+  const name = String(node.name || '').toLowerCase()
+  const url = String(node.url || '').toLowerCase()
+  return name.includes(keyword) || url.includes(keyword)
+}
+
+function treeMatchesKeyword(node, keyword) {
+  if (nodeMatchesKeyword(node, keyword)) return true
+  if (node.type !== 'group') return false
+  return (node.children || []).some(child => treeMatchesKeyword(child, keyword))
+}
 
 // 分组复选框状态：基于分组下所有链接（递归）的选中情况
 const groupLinkIds = computed(() => {
@@ -56,6 +82,12 @@ const handleNodeClick = () => {
   if (props.node.type === 'link' && props.node.url && props.node.url !== '#' && !props.node.placeholder) {
     window.open(props.node.url, '_blank', 'noopener noreferrer')
   }
+}
+
+const handleNodeDblClick = (e) => {
+  if (!isGroup.value) return
+  e.preventDefault()
+  navStore.toggleGroupExpand(props.node)
 }
 
 const handleContextMenu = (e) => {
@@ -109,6 +141,7 @@ const onInlineDelete = async () => {
 const handleDragStart = (e) => {
   if (props.readonly) return
   if (!navStore.isLoggedIn) return
+  if (navStore.batchMode) return
   isDragging.value = true
   e.dataTransfer.effectAllowed = 'move'
   e.dataTransfer.setData('text/plain', props.node.id)
@@ -127,13 +160,14 @@ const handleDragEnd = (e) => {
 const handleDragOver = (e) => {
   if (props.readonly) return
   if (!navStore.isLoggedIn) return
+  if (navStore.batchMode) return
   e.preventDefault()
   e.dataTransfer.dropEffect = 'move'
+  dragOver.value = true
+  const rect = e.currentTarget.getBoundingClientRect()
+  const y = e.clientY - rect.top
+  const h = rect.height
   if (isGroup.value) {
-    dragOver.value = true
-    const rect = e.currentTarget.getBoundingClientRect()
-    const y = e.clientY - rect.top
-    const h = rect.height
     if (y < h * 0.25) {
       dropPosition.value = 'before'
     } else if (y > h * 0.75) {
@@ -141,10 +175,13 @@ const handleDragOver = (e) => {
     } else {
       dropPosition.value = 'inside'
     }
+  } else {
+    dropPosition.value = y < h * 0.5 ? 'before' : 'after'
   }
 }
 
 const handleDragLeave = (e) => {
+  if (e.currentTarget.contains(e.relatedTarget)) return
   dragOver.value = false
   dropPosition.value = ''
 }
@@ -153,11 +190,13 @@ const handleDrop = (e) => {
   e.preventDefault()
   e.stopPropagation()
   if (props.readonly) return
-  if (!isGroup.value) return
+  if (navStore.batchMode) return
   const draggedId = e.dataTransfer.getData('text/plain')
-  const position = dropPosition.value || 'inside'
+  const position = dropPosition.value
   dragOver.value = false
   dropPosition.value = ''
+  if (!position) return
+  if (!isGroup.value && position === 'inside') return
   if (draggedId && position) {
     navStore.moveNode(draggedId, props.node.id, position)
   }
@@ -180,12 +219,13 @@ const handleDrop = (e) => {
       class="tree-node-header"
       :class="{
         active: isSelected,
-        selected: isChecked,
+        selected: navStore.batchMode && isChecked,
         'readonly-root': readonly && depth === 0
       }"
       @click="handleNodeClick"
+      @dblclick="handleNodeDblClick"
       @contextmenu="handleContextMenu"
-      :draggable="!readonly"
+      :draggable="!readonly && !navStore.batchMode"
       @dragstart="handleDragStart"
       @dragend="handleDragEnd"
       @dragover="handleDragOver"
@@ -201,7 +241,7 @@ const handleDrop = (e) => {
 
       <!-- 分组节点复选框：支持半选/全选，批量选择组内所有链接 -->
       <el-checkbox
-        v-if="isGroup && !readonly"
+        v-if="isGroup && !readonly && navStore.batchMode"
         :model-value="isGroupChecked"
         :indeterminate="isGroupIndeterminate"
         @change="handleGroupCheckboxChange"
@@ -211,7 +251,7 @@ const handleDrop = (e) => {
       />
       <!-- 链接节点复选框：单个选中 -->
       <el-checkbox
-        v-else-if="!readonly"
+        v-else-if="!readonly && navStore.batchMode"
         :model-value="isChecked"
         @change="handleCheckboxChange"
         @click="handleCheckboxClick"
@@ -234,7 +274,7 @@ const handleDrop = (e) => {
       <span v-if="node.badge" class="tree-badge">{{ node.badge }}</span>
 
       <!-- Inline fallback action buttons (appear on hover) -->
-      <span v-if="!readonly" class="tree-actions">
+      <span v-if="!readonly && !navStore.batchMode" class="tree-actions">
         <template v-if="isGroup">
           <button class="act-btn" title="新建子分组" @click.stop="onInlineAddGroup">
             <el-icon :size="14"><FolderAdd /></el-icon>
@@ -254,11 +294,12 @@ const handleDrop = (e) => {
 
     <div v-if="isGroup && isExpanded" class="tree-children">
       <NavTreeNode
-        v-for="child in node.children"
+        v-for="child in visibleChildren"
         :key="child.id"
         :node="child"
         :depth="depth + 1"
         :readonly="readonly"
+        :filter-keyword="filterKeyword"
         @node-click="(n) => emit('node-click', n)"
         @node-context-menu="(n, x, y) => emit('node-context-menu', n, x, y)"
       />
